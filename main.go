@@ -10,8 +10,9 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 )
 
-type Ticket struct {
-	DLQName string
+var strategies = map[string]RequestHandlerStrategy{
+	"purge":   &PurgeMessagesHander{},
+	"redrive": &RedriveMessagesHander{},
 }
 
 func main() {
@@ -19,24 +20,25 @@ func main() {
 }
 
 func Handler(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
-	var ticket Ticket
-	if err := json.Unmarshal([]byte(request.Body), &ticket); err != nil {
+	type Payload struct {
+		Action string `json:"action"`
+	}
+
+	var payload Payload
+	if err := json.Unmarshal([]byte(request.Body), &payload); err != nil {
 		log.Println("Error unmarshalling request", err)
 		return handleErrorResponse(http.StatusBadRequest, "Invalid request"), nil
 	}
 
-	if ticket.DLQName == "" {
-		messageError := "DLQName is required"
-		log.Println(messageError)
-		return handleErrorResponse(http.StatusBadRequest, messageError), nil
-
+	stategy, exists := strategies[payload.Action]
+	if !exists {
+		log.Println("Invalid action")
+		return handleErrorResponse(http.StatusBadRequest, "Invalid action"), nil
 	}
 
-	err := RedriveMessages(ctx, ticket.DLQName)
-	if err != nil {
-		messageError := "Error redriving message"
-		log.Println(messageError, err)
-		return handleErrorResponse(http.StatusInternalServerError, messageError), nil
+	if err := stategy.Execute(ctx, []byte(request.Body)); err != nil {
+		log.Println("Error executing strategy", err)
+		return handleErrorResponse(http.StatusInternalServerError, "Internal server error"), nil
 	}
 
 	return handleSuccessResponse(http.StatusOK), nil
