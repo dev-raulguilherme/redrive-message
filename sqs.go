@@ -57,6 +57,24 @@ func RedriveMessages(ctx context.Context, dlqName string) error {
 	return nil
 }
 
+func PurgeMessages(ctx context.Context, queueName string) error {
+	sqsClient, err := newSQSClient(ctx)
+	if err != nil {
+		return err
+	}
+
+	queueUrl, err := sqsClient.getQueueUrl(queueName)
+	if err != nil {
+		return err
+	}
+
+	sqsClient.client.PurgeQueue(ctx, &sqs.PurgeQueueInput{
+		QueueUrl: aws.String(queueUrl),
+	})
+
+	return nil
+}
+
 func newSQSClient(ctx context.Context) (*sqsClient, error) {
 	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
